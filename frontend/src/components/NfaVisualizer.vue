@@ -4,7 +4,16 @@
       <h3 class="text-sm font-bold text-slate-400">NFA 状态机可视化</h3>
       <span v-if="store.nfa" class="text-xs text-slate-500">{{ store.nfa.states.length }} 状态 · {{ store.nfa.transitions.length }} 转移</span>
     </div>
-    <canvas ref="canvasRef" width="800" height="500" class="w-full bg-slate-900 rounded-lg border border-slate-700"></canvas>
+    <div class="relative">
+      <canvas ref="canvasRef" width="800" height="500" class="w-full bg-slate-900 rounded-lg border border-slate-700"></canvas>
+      <!-- 各状态统一在画布区域给出稳定反馈，绝不残留上一次图形 -->
+      <div v-if="overlayText" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div class="text-center px-6">
+          <div :class="overlayClass" class="text-sm">{{ overlayText }}</div>
+          <div v-if="store.status === 'error'" class="text-xs text-slate-500 mt-1">修正左侧正则后自动重试，或点击"重试"</div>
+        </div>
+      </div>
+    </div>
     <div class="mt-2 flex gap-4 text-xs text-slate-500">
       <span><span class="inline-block w-3 h-3 rounded-full bg-cyan-500 mr-1"></span>起始状态</span>
       <span><span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span>接受状态</span>
@@ -15,15 +24,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRegexStore } from '../store/regex'
 
 const store = useRegexStore()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
+const overlayText = computed(() => {
+  switch (store.status) {
+    case 'error': return '正则解析失败，无法生成状态机'
+    case 'empty': return '等待输入：请填写正则表达式和测试字符串'
+    case 'idle': return '尚未执行，点击"执行匹配"开始'
+    default: return store.nfa ? '' : '无状态机数据'
+  }
+})
+const overlayClass = computed(() => store.status === 'error' ? 'text-red-400' : 'text-slate-500')
+
+function clearCanvas() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+}
+
 function draw() {
   const canvas = canvasRef.value
-  if (!canvas || !store.nfa) return
+  if (!canvas) return
+  // 无 NFA（解析失败/空输入）时先清空，避免残留上一次图形
+  if (!store.nfa) { clearCanvas(); return }
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
@@ -42,8 +70,10 @@ function draw() {
     if (!from || !to) return
 
     const isActive = activeStates.has(t.from) && activeStates.has(t.to)
-    ctx.strokeStyle = isActive ? '#f97316' : '#475569'
+    const isAssertion = !!t.assertion
+    ctx.strokeStyle = isActive ? '#f97316' : isAssertion ? '#8b5cf6' : '#475569'
     ctx.lineWidth = isActive ? 2.5 : 1
+    if (isAssertion) ctx.setLineDash([4, 4])
     ctx.beginPath()
     ctx.moveTo(from.x, from.y)
 
@@ -59,6 +89,7 @@ function draw() {
       ctx.quadraticCurveTo(mx + offX, my + offY, to.x, to.y)
     }
     ctx.stroke()
+    ctx.setLineDash([])
 
     // Arrowhead
     const angle = Math.atan2(to.y - from.y, to.x - from.x)
@@ -68,7 +99,7 @@ function draw() {
     ctx.lineTo(ex - Math.cos(angle - 0.4) * 8, ey - Math.sin(angle - 0.4) * 8)
     ctx.lineTo(ex - Math.cos(angle + 0.4) * 8, ey - Math.sin(angle + 0.4) * 8)
     ctx.closePath()
-    ctx.fillStyle = isActive ? '#f97316' : '#475569'
+    ctx.fillStyle = isActive ? '#f97316' : isAssertion ? '#8b5cf6' : '#475569'
     ctx.fill()
 
     // Label
@@ -76,7 +107,7 @@ function draw() {
     const dx2 = to.x - from.x, dy2 = to.y - from.y
     const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) || 1
     const lx = mx - dy2 / len2 * 15, ly = my + dx2 / len2 * 15
-    ctx.fillStyle = isActive ? '#fbbf24' : '#94a3b8'
+    ctx.fillStyle = isActive ? '#fbbf24' : isAssertion ? '#a78bfa' : '#94a3b8'
     ctx.font = '11px monospace'
     ctx.textAlign = 'center'
     ctx.fillText(t.label, lx, ly)
@@ -128,5 +159,5 @@ function draw() {
 }
 
 onMounted(() => { draw() })
-watch(() => [store.nfa, store.currentStep], () => draw(), { deep: true })
+watch(() => [store.nfa, store.currentStep, store.status], () => draw(), { deep: true })
 </script>
