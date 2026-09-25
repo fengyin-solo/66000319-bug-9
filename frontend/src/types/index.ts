@@ -1,3 +1,5 @@
+export type ExecStatus = 'idle' | 'success' | 'error'
+
 export interface NFAState {
   id: number
   isStart: boolean

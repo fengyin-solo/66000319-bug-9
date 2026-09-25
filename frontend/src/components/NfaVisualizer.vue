@@ -4,7 +4,18 @@
       <h3 class="text-sm font-bold text-slate-400">NFA 状态机可视化</h3>
       <span v-if="store.nfa" class="text-xs text-slate-500">{{ store.nfa.states.length }} 状态 · {{ store.nfa.transitions.length }} 转移</span>
     </div>
-    <canvas ref="canvasRef" width="800" height="500" class="w-full bg-slate-900 rounded-lg border border-slate-700"></canvas>
+    <div class="relative">
+      <canvas ref="canvasRef" width="800" height="500" class="w-full bg-slate-900 rounded-lg border border-slate-700"></canvas>
+      <div v-if="store.status === 'error'" class="absolute inset-0 flex items-center justify-center bg-slate-900/90 rounded-lg">
+        <div class="text-center px-6">
+          <div class="text-red-400 text-sm font-bold mb-1">无法构建状态机</div>
+          <div class="text-red-500/80 text-xs break-all">{{ store.error }}</div>
+        </div>
+      </div>
+      <div v-else-if="store.status === 'idle'" class="absolute inset-0 flex items-center justify-center bg-slate-900/90 rounded-lg">
+        <div class="text-slate-500 text-sm">输入正则表达式后此处显示状态机</div>
+      </div>
+    </div>
     <div class="mt-2 flex gap-4 text-xs text-slate-500">
       <span><span class="inline-block w-3 h-3 rounded-full bg-cyan-500 mr-1"></span>起始状态</span>
       <span><span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span>接受状态</span>
@@ -23,12 +34,15 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 function draw() {
   const canvas = canvasRef.value
-  if (!canvas || !store.nfa) return
+  if (!canvas) return
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
+  // 每次重绘先清空，保证错误态/切换模板时不会残留上一次的图
   ctx.clearRect(0, 0, canvas.width, canvas.height)
+  if (!store.nfa) return
 
+  const nfa = store.nfa
   const activeStates = new Set<number>()
   if (store.matchResult && store.currentStep < store.matchResult.steps.length) {
     const step = store.matchResult.steps[store.currentStep]
@@ -36,9 +50,9 @@ function draw() {
   }
 
   // Draw transitions
-  store.nfa.transitions.forEach(t => {
-    const from = store.nfa!.states.find(s => s.id === t.from)
-    const to = store.nfa!.states.find(s => s.id === t.to)
+  nfa.transitions.forEach(t => {
+    const from = nfa.states.find(s => s.id === t.from)
+    const to = nfa.states.find(s => s.id === t.to)
     if (!from || !to) return
 
     const isActive = activeStates.has(t.from) && activeStates.has(t.to)
@@ -83,7 +97,7 @@ function draw() {
   })
 
   // Draw states
-  store.nfa.states.forEach(s => {
+  nfa.states.forEach(s => {
     const isActive = activeStates.has(s.id)
     const color = s.isStart ? '#06b6d4' : s.isAccept ? '#22c55e' : isActive ? '#f97316' : '#475569'
 
@@ -127,6 +141,12 @@ function draw() {
   })
 }
 
-onMounted(() => { draw() })
-watch(() => [store.nfa, store.currentStep], () => draw(), { deep: true })
+onMounted(draw)
+// nfa / matchResult / currentStep / 状态标签任一变化都重绘；
+// nfa 被置空（解析失败）时 draw 内部只做清空，画布与结果区域保持同步
+watch(
+  () => [store.nfa, store.matchResult, store.currentStep, store.status],
+  draw,
+  { deep: true }
+)
 </script>
